@@ -533,7 +533,7 @@ class HealthConnectManager(private val context: Context) {
     companion object {
         private const val EXPORT_HISTORY_DAYS = 30L
         private const val PAGE_SIZE = 500
-        private const val MAX_RECORDS_PER_TYPE = 2_000
+        private const val MAX_RECORDS_PER_TYPE = 20_000
         private const val MAX_SERIALIZATION_DEPTH = 5
         private val PREFERRED_DAILY_SUMMARY_ORIGINS = listOf(
             "com.fitbit.FitbitMobile",
