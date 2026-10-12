@@ -398,7 +398,7 @@ class HealthConnectManager(private val context: Context) {
                 ReadRecordsRequest(
                     recordType = recordType as KClass<Record>,
                     timeRangeFilter = range,
-                    ascendingOrder = true,
+                    ascendingOrder = false,
                     pageSize = PAGE_SIZE,
                     pageToken = pageToken,
                 )
