@@ -5,6 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import org.json.JSONObject
 import java.time.LocalDate
+import android.util.JsonReader
+import android.util.JsonToken
+import java.io.InputStreamReader
 
 object DriveClient {
 
@@ -76,12 +79,106 @@ object DriveClient {
         return existing
     }
 
-    private fun readFile(context: Context, uri: Uri): JSONObject? {
-        val text = context.contentResolver.openInputStream(uri)?.use { input ->
-            input.bufferedReader().readText()
-        }.orEmpty()
-        return if (text.isBlank()) null else JSONObject(text)
+ private fun readFile(context: Context, uri: Uri): JSONObject? {
+    val input = context.contentResolver.openInputStream(uri) ?: return null
+
+    return input.use { stream ->
+        JsonReader(InputStreamReader(stream)).use { reader ->
+            val root = JSONObject()
+            var foundUsefulData = false
+
+            reader.beginObject()
+
+            while (reader.hasNext()) {
+                when (val name = reader.nextName()) {
+                    "profile" -> {
+                        root.put("profile", readJsonObject(reader))
+                        foundUsefulData = true
+                    }
+
+                    "snapshots" -> {
+                        root.put("snapshots", readJsonArray(reader))
+                        foundUsefulData = true
+                    }
+
+                    "latest_full_export" -> {
+                        // This section can be very large.
+                        // We are about to replace it with the new full export,
+                        // so never load the old one into memory.
+                        reader.skipValue()
+                    }
+
+                    else -> {
+                        // Ignore unknown top-level sections rather than
+                        // accidentally loading another huge object.
+                        reader.skipValue()
+                    }
+                }
+            }
+
+            reader.endObject()
+
+            if (foundUsefulData) root else null
+        }
     }
+}
+
+ private fun readJsonObject(reader: JsonReader): JSONObject {
+    val obj = JSONObject()
+
+    reader.beginObject()
+
+    while (reader.hasNext()) {
+        val name = reader.nextName()
+        obj.put(name, readJsonValue(reader))
+    }
+
+    reader.endObject()
+    return obj
+}
+
+private fun readJsonArray(reader: JsonReader): org.json.JSONArray {
+    val array = org.json.JSONArray()
+
+    reader.beginArray()
+
+    while (reader.hasNext()) {
+        array.put(readJsonValue(reader))
+    }
+
+    reader.endArray()
+    return array
+}
+
+private fun readJsonValue(reader: JsonReader): Any {
+    return when (reader.peek()) {
+        JsonToken.BEGIN_OBJECT -> readJsonObject(reader)
+
+        JsonToken.BEGIN_ARRAY -> readJsonArray(reader)
+
+        JsonToken.STRING -> reader.nextString()
+
+        JsonToken.NUMBER -> {
+            val value = reader.nextString()
+
+            value.toLongOrNull()
+                ?: value.toDoubleOrNull()
+                ?: value
+        }
+
+        JsonToken.BOOLEAN -> reader.nextBoolean()
+
+        JsonToken.NULL -> {
+            reader.nextNull()
+            JSONObject.NULL
+        }
+
+        else -> {
+            reader.skipValue()
+            JSONObject.NULL
+        }
+    }
+}
 
     private fun writeFile(context: Context, uri: Uri, content: JSONObject) {
         context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
