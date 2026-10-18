@@ -1,5 +1,6 @@
 package com.healthsync
 
+import java.io.PushbackReader
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -83,14 +84,28 @@ private fun readFile(context: Context, uri: Uri): JSONObject? {
     val input = context.contentResolver.openInputStream(uri) ?: return null
 
     return input.use { stream ->
-        JsonReader(InputStreamReader(stream)).use { reader ->
+        val source = PushbackReader(InputStreamReader(stream), 1)
 
-            // A newly created Drive file may be completely empty.
-            // Treat that as "no existing sync data".
-            if (reader.peek() == JsonToken.END_DOCUMENT) {
-                return@use null
-            }
+        // Check whether the Drive file actually contains anything
+        // before handing it to JsonReader.
+        var firstChar = source.read()
 
+        while (
+            firstChar != -1 &&
+            (firstChar.toChar().isWhitespace() || firstChar == 0xFEFF)
+        ) {
+            firstChar = source.read()
+        }
+
+        // Completely empty (or whitespace-only) file.
+        if (firstChar == -1) {
+            return@use null
+        }
+
+        // Put the first real JSON character back so JsonReader sees it.
+        source.unread(firstChar)
+
+        JsonReader(source).use { reader ->
             val root = JSONObject()
             var foundUsefulData = false
 
@@ -109,8 +124,8 @@ private fun readFile(context: Context, uri: Uri): JSONObject? {
                     }
 
                     "latest_full_export" -> {
-                        // We are replacing this with the new full export,
-                        // so skip the old large object without loading it.
+                        // The new sync will replace this large section,
+                        // so skip the old one without loading it into memory.
                         reader.skipValue()
                     }
 
