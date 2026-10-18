@@ -79,18 +79,25 @@ object DriveClient {
         return existing
     }
 
- private fun readFile(context: Context, uri: Uri): JSONObject? {
+private fun readFile(context: Context, uri: Uri): JSONObject? {
     val input = context.contentResolver.openInputStream(uri) ?: return null
 
     return input.use { stream ->
         JsonReader(InputStreamReader(stream)).use { reader ->
+
+            // A newly created Drive file may be completely empty.
+            // Treat that as "no existing sync data".
+            if (reader.peek() == JsonToken.END_DOCUMENT) {
+                return@use null
+            }
+
             val root = JSONObject()
             var foundUsefulData = false
 
             reader.beginObject()
 
             while (reader.hasNext()) {
-                when (val name = reader.nextName()) {
+                when (reader.nextName()) {
                     "profile" -> {
                         root.put("profile", readJsonObject(reader))
                         foundUsefulData = true
@@ -102,15 +109,12 @@ object DriveClient {
                     }
 
                     "latest_full_export" -> {
-                        // This section can be very large.
-                        // We are about to replace it with the new full export,
-                        // so never load the old one into memory.
+                        // We are replacing this with the new full export,
+                        // so skip the old large object without loading it.
                         reader.skipValue()
                     }
 
                     else -> {
-                        // Ignore unknown top-level sections rather than
-                        // accidentally loading another huge object.
                         reader.skipValue()
                     }
                 }
